@@ -35,6 +35,7 @@ import org.apache.iceberg.data.GenericAppenderFactory;
 import org.apache.iceberg.data.IdentityPartitionConverters;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.encryption.EncryptedOutputFile;
+import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.DataWriter;
 import org.apache.iceberg.io.OutputFileFactory;
@@ -93,20 +94,21 @@ public class IcebergExecutor extends BaseExecutor {
         appenderFactory, deleteFileFormat, task.getPartition(), table.io(), table.asUnkeyedTable().encryption());
 
     AtomicLong insertCount = new AtomicLong();
-    icebergDataReader.readDeleteData(buildIcebergScanTask()).forEach(record -> {
-      String filePath = (String) record.getField(MetadataColumns.FILE_PATH.name());
-      Long rowPosition = (Long) record.getField(MetadataColumns.ROW_POSITION.name());
-      icebergPosDeleteWriter.delete(filePath, rowPosition);
+    try (CloseableIterable<Record> iterable = icebergDataReader.readDeleteData(buildIcebergScanTask())) {
+      iterable.forEach(record -> {
+        String filePath = (String) record.getField(MetadataColumns.FILE_PATH.name());
+        Long rowPosition = (Long) record.getField(MetadataColumns.ROW_POSITION.name());
+        icebergPosDeleteWriter.delete(filePath, rowPosition);
 
-      insertCount.incrementAndGet();
-      if (insertCount.get() % SAMPLE_DATA_INTERVAL == 1) {
-        LOG.info("task {} insert records number {} and data sampling path:{}, pos:{}",
-            task.getTaskId(), insertCount.get(), filePath, rowPosition);
-      }
-    });
-
+        insertCount.incrementAndGet();
+        if (insertCount.get() % SAMPLE_DATA_INTERVAL == 1) {
+          LOG.info("task {} insert records number {} and data sampling path:{}, pos:{}",
+              task.getTaskId(), insertCount.get(), filePath, rowPosition);
+        }
+      });
+    }
+    icebergPosDeleteWriter.close();
     LOG.info("task {} insert records number {}", task.getTaskId(), insertCount.get());
-
     return icebergPosDeleteWriter.complete();
   }
 
@@ -135,27 +137,30 @@ public class IcebergExecutor extends BaseExecutor {
     DataWriter<Record> writer = appenderFactory
         .newDataWriter(outputFile, FileFormat.valueOf(formatAsString.toUpperCase()), task.getPartition());
 
-    CloseableIterator<Record> records =  icebergDataReader.readData(buildIcebergScanTask()).iterator();
     long insertCount = 0;
-    while (records.hasNext()) {
-      if (writer.length() > targetSizeByBytes) {
+    try (CloseableIterator<Record> records = icebergDataReader.readData(buildIcebergScanTask()).iterator()) {
+      while (records.hasNext()) {
+        if (writer.length() > targetSizeByBytes) {
+          writer.close();
+          result.add(writer.toDataFile());
+          outputFile = outputFileFactory.newOutputFile(task.getPartition());
+          writer = appenderFactory
+              .newDataWriter(outputFile, FileFormat.valueOf(formatAsString.toUpperCase()), task.getPartition());
+        }
+        Record record = records.next();
+        writer.write(record);
+
+        insertCount++;
+        if (insertCount % SAMPLE_DATA_INTERVAL == 1) {
+          LOG.info("task {} insert records number {} and data sampling {}",
+              task.getTaskId(), insertCount, record);
+        }
+      }
+      if (writer.length() > 0) {
         writer.close();
         result.add(writer.toDataFile());
-        outputFile = outputFileFactory.newOutputFile(task.getPartition());
-        writer = appenderFactory
-            .newDataWriter(outputFile, FileFormat.valueOf(formatAsString.toUpperCase()), task.getPartition());
-      }
-      Record record = records.next();
-      writer.write(record);
-
-      insertCount++;
-      if (insertCount % SAMPLE_DATA_INTERVAL == 1) {
-        LOG.info("task {} insert records number {} and data sampling {}",
-            task.getTaskId(), insertCount, record);
       }
     }
-    writer.close();
-    result.add(writer.toDataFile());
 
     LOG.info("task {} insert records number {}", task.getTaskId(), insertCount);
     return result;
