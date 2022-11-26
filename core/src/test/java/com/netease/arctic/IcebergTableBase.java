@@ -121,13 +121,17 @@ public class IcebergTableBase {
         record.copy("id", 1L)
     ), FileFormat.PARQUET, unPartitionSchema),4L);
 
+    IcebergContentFile eqDeleteFile2 = new IcebergContentFile(eqDelete(Arrays.asList(
+        record.copy("id", 1L)
+    ), FileFormat.PARQUET, unPartitionSchema),1L);
+
     IcebergContentFile posDeleteFile = new IcebergContentFile(posDelete(Arrays.asList(
         PositionDelete.<Record>create().set(parquetData.asDataFile().path(), 0, record.copy("id", 2L))
     ), FileFormat.AVRO, unPartitionSchema),5L);
 
     unPartitionAllFileTask = new CombinedIcebergScanTask(
         new IcebergContentFile[]{avroData, parquetData, orcData},
-        new IcebergContentFile[]{eqDeleteFile, posDeleteFile},
+        new IcebergContentFile[]{eqDeleteFile, posDeleteFile, eqDeleteFile2},
         PartitionSpec.unpartitioned(),
         null
     );
