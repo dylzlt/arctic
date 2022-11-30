@@ -46,7 +46,7 @@ public class DerbyService extends IJDBCService {
   }
 
   private static String getDerbyInitSqlDir() {
-    String derbyInitSqlDir = System.getProperty("derby.init.sql.dir");
+    String derbyInitSqlDir = "/Users/Lothar/local-debug/arctic/ams/ams-server/src/main/resources/sql/derby";
     if (derbyInitSqlDir == null) {
       return System.getProperty("user.dir") + "/conf/derby/ams-init.sql".replace("/", File.separator);
     } else {
