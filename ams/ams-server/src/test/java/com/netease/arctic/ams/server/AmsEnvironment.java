@@ -2,7 +2,6 @@ package com.netease.arctic.ams.server;
 
 import com.netease.arctic.ams.api.CatalogMeta;
 import com.netease.arctic.ams.api.properties.CatalogMetaProperties;
-import com.netease.arctic.ams.api.properties.TableFormat;
 import com.netease.arctic.ams.server.config.ArcticMetaStoreConf;
 import com.netease.arctic.ams.server.service.ServiceContainer;
 import com.netease.arctic.ams.server.util.DerbyTestUtil;
@@ -139,6 +138,10 @@ public class AmsEnvironment {
     return ServiceContainer.getOptimizeService().refreshAndListTables();
   }
 
+  public void syncTableFileCache(TableIdentifier tableIdentifier, String tableType) {
+    ServiceContainer.getFileInfoCacheService().syncTableFileInfo(tableIdentifier.buildTableIdentifier(), tableType);
+  }
+
   public void createIcebergCatalog(String catalogName, String warehouseDir) {
     CatalogMeta icebergCatalog = new CatalogMeta();
     icebergCatalog.setCatalogName(catalogName);
@@ -187,7 +190,7 @@ public class AmsEnvironment {
       throw new RuntimeException(e);
     }
     properties.put("warehouse", warehouseDir);
-    properties.put("table-formats", TableFormat.MIXED_ICEBERG.name());
+    properties.put("table-formats", "MIXED_ICEBERG");
     localCatalog.setCatalogProperties(properties);
     ServiceContainer.getCatalogMetadataService().addCatalog(localCatalog);
   }
@@ -228,8 +231,8 @@ public class AmsEnvironment {
     return "ams:\n" +
         "  arctic.ams.server-host.prefix: \"127.\"\n" +
         // "  arctic.ams.server-host: 127.0.0.1\n" +
-        "  arctic.ams.thrift.port: 1260 # useless in test, System.getProperty(\"arctic.ams.thrift.port\") is used\n" +
-        "  arctic.ams.http.port: 1630\n" +
+        "  arctic.ams.thrift.port: 1360 # useless in test, System.getProperty(\"arctic.ams.thrift.port\") is used\n" +
+        "  arctic.ams.http.port: 1730\n" +
         "  arctic.ams.optimize.check.thread.pool-size: 1\n" +
         "  arctic.ams.optimize.commit.thread.pool-size: 1\n" +
         "  arctic.ams.expire.thread.pool-size: 1\n" +
