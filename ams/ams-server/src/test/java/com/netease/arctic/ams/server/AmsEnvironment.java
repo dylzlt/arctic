@@ -2,6 +2,7 @@ package com.netease.arctic.ams.server;
 
 import com.netease.arctic.ams.api.CatalogMeta;
 import com.netease.arctic.ams.api.properties.CatalogMetaProperties;
+import com.netease.arctic.ams.api.properties.TableFormat;
 import com.netease.arctic.ams.server.config.ArcticMetaStoreConf;
 import com.netease.arctic.ams.server.service.ServiceContainer;
 import com.netease.arctic.ams.server.util.DerbyTestUtil;
@@ -186,7 +187,7 @@ public class AmsEnvironment {
       throw new RuntimeException(e);
     }
     properties.put("warehouse", warehouseDir);
-    properties.put("table-formats", "ICEBERG");
+    properties.put("table-formats", TableFormat.MIXED_ICEBERG.name());
     localCatalog.setCatalogProperties(properties);
     ServiceContainer.getCatalogMetadataService().addCatalog(localCatalog);
   }

@@ -5,6 +5,7 @@ import com.netease.arctic.ams.api.OptimizeType;
 import com.netease.arctic.data.IcebergContentFile;
 import com.netease.arctic.optimizer.OptimizerConfig;
 import org.apache.iceberg.ContentFile;
+import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileContent;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.junit.Assert;
@@ -37,6 +38,15 @@ public class TestIcebergExecutor extends TestIcebergExecutorBase {
     ContentFile<?> resultFile = result.getTargetFiles().iterator().next();
     Assert.assertEquals(FileContent.DATA, resultFile.content());
     Assert.assertEquals(18, resultFile.recordCount());
+  }
+
+  @Test
+  public void test() throws Exception {
+    DataFile smallDataFile1 = insertDataFiles(10, 0);
+    icebergTable.asUnkeyedTable().newAppend().appendFile(smallDataFile1).commit();
+
+    icebergTable.asUnkeyedTable().updateProperties().set("a", "b").commit();
+    System.out.println(1);
   }
 
   @Test
