@@ -54,9 +54,9 @@ import java.util.Arrays;
 import java.util.List;
 
 public class MockInitRecord {
-  private static final String CATALOG = "native-iceberg-benchmark";
-  private static final String DB = "native_100w_iceberg_1126_test";
-  private static final String TABLE = "warehouse";
+  private static final String CATALOG = "local_catalog";
+  private static final String DB = "db";
+  private static final String TABLE = "pk_pt_animal_lt";
   private static final TableIdentifier TABLE_ID = TableIdentifier.of(CATALOG, DB, TABLE);
 
   protected static final LocalDateTime ldt =
@@ -73,32 +73,28 @@ public class MockInitRecord {
 
   @Before
   public void loadTable() {
-    testCatalog = CatalogLoader.load("thrift://10.196.98.23:1260/" + CATALOG,
+    testCatalog = CatalogLoader.load("thrift://127.0.0.1:1260/" + CATALOG,
         Maps.newHashMap());
     arcticTable = testCatalog.loadTable(TABLE_ID);
-//    arcticTable.updateProperties()
-//        .set(TableProperties.ENABLE_OPTIMIZE, "true")
-//        .set(TableProperties.OPTIMIZE_QUOTA, "1")
-//        .commit();
-//    rowType = FlinkSchemaUtil.convert(arcticTable.schema());
+    rowType = FlinkSchemaUtil.convert(arcticTable.schema());
   }
 
   @Test
   public void mockData() throws Exception {
-//    arcticTable.io().doAs(() -> {
+    arcticTable.io().doAs(() -> {
 //      for (int i = 0; i < 11; i++) {
 //        insertBase(arcticTable, 0, 1, rowType);
 //        Thread.sleep(1000);
 //      }
-//      insertInsert(arcticTable);
-//      for (int i = 2; i < 11; i++) {
-//        insetUpdate(arcticTable, i);
-//        Thread.sleep(5000);
-//      }
-//
-////      insetUpdate(7);
-//      return null;
-//    });
+      insertInsert(arcticTable);
+      for (int i = 2; i < 4; i++) {
+        insetUpdate(arcticTable, i);
+        Thread.sleep(5000);
+      }
+
+//      insetUpdate(7);
+      return null;
+    });
 
 //    ((SupportHive) arcticTable).getHMSClient().run(client -> {
 //      Table table = client.getTable(arcticTable.id().getDatabase(),
