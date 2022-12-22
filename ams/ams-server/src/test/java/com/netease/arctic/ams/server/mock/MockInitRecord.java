@@ -56,7 +56,7 @@ import java.util.List;
 public class MockInitRecord {
   private static final String CATALOG = "local_catalog";
   private static final String DB = "db";
-  private static final String TABLE = "pk_pt_animal_lt";
+  private static final String TABLE = "pk_table";
   private static final TableIdentifier TABLE_ID = TableIdentifier.of(CATALOG, DB, TABLE);
 
   protected static final LocalDateTime ldt =
@@ -86,11 +86,8 @@ public class MockInitRecord {
 //        insertBase(arcticTable, 0, 1, rowType);
 //        Thread.sleep(1000);
 //      }
-      insertInsert(arcticTable);
-      for (int i = 2; i < 4; i++) {
-        insetUpdate(arcticTable, i);
-        Thread.sleep(5000);
-      }
+//      insertInsert(arcticTable);
+      insetUpdate(arcticTable, 4, 10000);
 
 //      insetUpdate(7);
       return null;
@@ -151,40 +148,19 @@ public class MockInitRecord {
     }
   }
 
-  protected void insetUpdate(ArcticTable arcticTable, int txId) throws Exception {
+  protected void insetUpdate(ArcticTable arcticTable, int txId, int count) throws Exception {
     //write change delete
     {
       TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 4,  txId, rowType);
-      List<RowData> update = new ArrayList<RowData>() {{
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, 1, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, 2, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, 3, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, 4, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, 5, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, 6, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, 7, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, 1, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, 2, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, 3, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, 4, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, 5, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, 6, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, 7, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-      }};
+      List<RowData> update = new ArrayList<RowData>();
+      for (int i = 1; i <= count; i++) {
+        RowData before = GenericRowData.ofKind(
+            RowKind.UPDATE_BEFORE, i, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john"));
+        RowData after = GenericRowData.ofKind(
+            RowKind.UPDATE_AFTER, i, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john"));
+        update.add(before);
+        update.add(after);
+      }
 
       for (RowData record : update) {
         taskWriter.write(record);
