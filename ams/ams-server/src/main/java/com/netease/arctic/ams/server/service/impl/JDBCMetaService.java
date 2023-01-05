@@ -24,7 +24,6 @@ import com.netease.arctic.ams.api.NoSuchObjectException;
 import com.netease.arctic.ams.server.config.ServerTableProperties;
 import com.netease.arctic.ams.server.mapper.DatabaseMetadataMapper;
 import com.netease.arctic.ams.server.mapper.TableMetadataMapper;
-import com.netease.arctic.ams.server.model.OptimizeQueueItem;
 import com.netease.arctic.ams.server.model.TableMetadata;
 import com.netease.arctic.ams.server.optimize.TableOptimizeItem;
 import com.netease.arctic.ams.server.service.IInternalTableService;
@@ -177,7 +176,6 @@ public class JDBCMetaService extends IJDBCService implements IMetaService {
           TableProperties.SELF_OPTIMIZING_GROUP, TableProperties.SELF_OPTIMIZING_GROUP_DEFAULT);
       if (StringUtils.isNotBlank(oldQueueName) && StringUtils.isNotBlank(newQueueName) && !oldQueueName.equals(
           newQueueName)) {
-        OptimizeQueueItem newOptimizeQueue = ServiceContainer.getOptimizeQueueService().getOptimizeQueue(newQueueName);
         TableOptimizeItem arcticTableItem = ServiceContainer.getOptimizeService().getTableOptimizeItem(tableIdentifier);
         ServiceContainer.getOptimizeQueueService().release(tableIdentifier);
         try {
@@ -185,8 +183,7 @@ public class JDBCMetaService extends IJDBCService implements IMetaService {
         } catch (Throwable t) {
           LOG.error("failed to delete " + tableIdentifier + " compact task, ignore", t);
         }
-        ServiceContainer.getOptimizeQueueService().bind(arcticTableItem.getTableIdentifier(),
-            newOptimizeQueue.getOptimizeQueueMeta().getQueueId());
+        ServiceContainer.getOptimizeQueueService().bind(arcticTableItem.getTableIdentifier(), newQueueName);
       }
     } catch (InvalidObjectException | NoSuchObjectException e) {
       LOG.error("get tables failed " + tableIdentifier, e);

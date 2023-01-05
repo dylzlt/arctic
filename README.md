@@ -2,7 +2,7 @@
 
 Arctic is a LakeHouse management system under open architecture, which on top of data lake open formats provides more optimizations for streaming and upsert scenarios, as well as a set of pluggable self-optimizing mechanisms and management services. Using Arctic could help various data platforms, tools and products build out-of-the-box, streaming and batch unified LakeHouses quickly.
 
-## What is arctic
+## What is Arctic
 
 Currently, Arctic is a LakeHouse management system on top of iceberg format. Benefit from the thriving ecology of Apache Iceberg, Arctic could be used on kinds of data lakes on premise or clouds with varities of engines. Several concepts should be known before your deeper steps:
 
@@ -72,7 +72,7 @@ Arctic support multiple processing engines as below:
 
 ## Quickstart
 
-Visit [https://arctic.netease.com/ch/docker-quickstart/](https://arctic.netease.com/ch/docker-quickstart/) to quickly explore what arctic can do.
+Visit [https://arctic.netease.com/ch/quickstart/setup/](https://arctic.netease.com/ch/quickstart/setup/) to quickly explore what arctic can do.
 
 ## Join Community 
 If you are interested in Lakehouse, Data Lake Format, welcome to join our community, we welcome any organizations, teams and individuals to grow together, and sincerely hope to help users better use Data Lake Format through open source. 

@@ -22,7 +22,6 @@ import com.netease.arctic.ams.api.OptimizeType;
 import com.netease.arctic.ams.server.model.BaseOptimizeTask;
 import com.netease.arctic.ams.server.model.TableOptimizeRuntime;
 import com.netease.arctic.ams.server.model.TaskConfig;
-import com.netease.arctic.ams.server.utils.SequenceNumberFetcher;
 import com.netease.arctic.table.ArcticTable;
 import com.netease.arctic.table.TableProperties;
 import org.apache.commons.collections.CollectionUtils;
@@ -49,7 +48,7 @@ public class IcebergFullOptimizePlan extends BaseIcebergOptimizePlan {
   protected final Map<String, List<FileScanTask>> partitionFileList = new LinkedHashMap<>();
 
   public IcebergFullOptimizePlan(ArcticTable arcticTable, TableOptimizeRuntime tableOptimizeRuntime,
-                                 Iterable<FileScanTask> fileScanTasks,
+                                 List<FileScanTask> fileScanTasks,
                                  Map<String, Boolean> partitionTaskRunning,
                                  int queueId, long currentTime) {
     super(arcticTable, tableOptimizeRuntime, fileScanTasks, partitionTaskRunning, queueId, currentTime);
@@ -134,8 +133,6 @@ public class IcebergFullOptimizePlan extends BaseIcebergOptimizePlan {
     List<List<FileScanTask>> binPackFileScanTasks = binPackFileScanTask(fileScanTasks);
 
     if (CollectionUtils.isNotEmpty(binPackFileScanTasks)) {
-      SequenceNumberFetcher sequenceNumberFetcher = new SequenceNumberFetcher(
-          arcticTable.asUnkeyedTable(), currentSnapshotId);
       for (List<FileScanTask> fileScanTask : binPackFileScanTasks) {
         List<DataFile> dataFiles = new ArrayList<>();
         List<DeleteFile> eqDeleteFiles = new ArrayList<>();
@@ -143,7 +140,7 @@ public class IcebergFullOptimizePlan extends BaseIcebergOptimizePlan {
         getOptimizeFile(fileScanTask, dataFiles, eqDeleteFiles, posDeleteFiles);
 
         collector.add(buildOptimizeTask(Collections.emptyList(), dataFiles,
-            eqDeleteFiles, posDeleteFiles, sequenceNumberFetcher, taskPartitionConfig));
+            eqDeleteFiles, posDeleteFiles, taskPartitionConfig));
       }
     }
 

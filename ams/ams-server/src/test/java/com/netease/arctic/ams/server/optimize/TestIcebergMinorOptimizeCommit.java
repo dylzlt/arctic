@@ -6,10 +6,13 @@ import com.netease.arctic.ams.server.model.BaseOptimizeTaskRuntime;
 import com.netease.arctic.ams.server.model.TableOptimizeRuntime;
 import com.netease.arctic.ams.server.utils.JDBCSqlSessionFactoryProvider;
 import com.netease.arctic.table.TableProperties;
-import com.netease.arctic.utils.SerializationUtil;
+import com.netease.arctic.utils.SerializationUtils;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.FileScanTask;
+import org.apache.iceberg.io.CloseableIterable;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.junit.Assert;
 import org.junit.Test;
 import org.powermock.core.classloader.annotations.PowerMockIgnore;
@@ -42,17 +45,26 @@ public class TestIcebergMinorOptimizeCommit extends TestIcebergBase {
     insertPosDeleteFiles(icebergNoPartitionTable.asUnkeyedTable(), dataFiles);
     Set<String> oldDataFilesPath = new HashSet<>();
     Set<String> oldDeleteFilesPath = new HashSet<>();
-    icebergNoPartitionTable.asUnkeyedTable().newScan().planFiles()
-        .forEach(fileScanTask -> {
-          if (fileScanTask.file().fileSizeInBytes() <= 1000) {
-            oldDataFilesPath.add((String) fileScanTask.file().path());
-            fileScanTask.deletes().forEach(deleteFile -> oldDeleteFilesPath.add((String) deleteFile.path()));
-          }
-        });
+    try (CloseableIterable<FileScanTask> filesIterable = icebergNoPartitionTable.asUnkeyedTable().newScan()
+        .planFiles()) {
+      filesIterable.forEach(fileScanTask -> {
+        if (fileScanTask.file().fileSizeInBytes() <= 1000) {
+          oldDataFilesPath.add((String) fileScanTask.file().path());
+          fileScanTask.deletes().forEach(deleteFile -> oldDeleteFilesPath.add((String) deleteFile.path()));
+        }
+      });
+    }
 
+    List<FileScanTask> fileScanTasks;
+    try (CloseableIterable<FileScanTask> filesIterable = icebergNoPartitionTable.asUnkeyedTable().newScan()
+        .planFiles()) {
+      fileScanTasks = Lists.newArrayList(filesIterable);
+    }
+
+    icebergNoPartitionTable.asUnkeyedTable().newScan().planFiles();
     IcebergMinorOptimizePlan optimizePlan = new IcebergMinorOptimizePlan(icebergNoPartitionTable,
         new TableOptimizeRuntime(icebergNoPartitionTable.id()),
-        icebergNoPartitionTable.asUnkeyedTable().newScan().planFiles(),
+        fileScanTasks,
         new HashMap<>(), 1, System.currentTimeMillis());
     List<BaseOptimizeTask> tasks = optimizePlan.plan();
 
@@ -68,7 +80,7 @@ public class TestIcebergMinorOptimizeCommit extends TestIcebergBase {
       optimizeRuntime.setReportTime(System.currentTimeMillis());
       if (resultFiles != null) {
         optimizeRuntime.setNewFileSize(resultFiles.get(0).fileSizeInBytes());
-        optimizeRuntime.setTargetFiles(resultFiles.stream().map(SerializationUtil::toByteBuffer).collect(Collectors.toList()));
+        optimizeRuntime.setTargetFiles(resultFiles.stream().map(SerializationUtils::toByteBuffer).collect(Collectors.toList()));
       }
       List<ByteBuffer> finalTargetFiles = optimizeRuntime.getTargetFiles();
       optimizeRuntime.setTargetFiles(finalTargetFiles);
@@ -98,17 +110,25 @@ public class TestIcebergMinorOptimizeCommit extends TestIcebergBase {
     insertPosDeleteFiles(icebergPartitionTable.asUnkeyedTable(), dataFiles);
     Set<String> oldDataFilesPath = new HashSet<>();
     Set<String> oldDeleteFilesPath = new HashSet<>();
-    icebergPartitionTable.asUnkeyedTable().newScan().planFiles()
-        .forEach(fileScanTask -> {
-          if (fileScanTask.file().fileSizeInBytes() <= 1000) {
-            oldDataFilesPath.add((String) fileScanTask.file().path());
-            fileScanTask.deletes().forEach(deleteFile -> oldDeleteFilesPath.add((String) deleteFile.path()));
-          }
-        });
+    try (CloseableIterable<FileScanTask> filesIterable = icebergPartitionTable.asUnkeyedTable().newScan()
+        .planFiles()) {
+      filesIterable.forEach(fileScanTask -> {
+        if (fileScanTask.file().fileSizeInBytes() <= 1000) {
+          oldDataFilesPath.add((String) fileScanTask.file().path());
+          fileScanTask.deletes().forEach(deleteFile -> oldDeleteFilesPath.add((String) deleteFile.path()));
+        }
+      });
+    }
+
+    List<FileScanTask> fileScanTasks;
+    try (CloseableIterable<FileScanTask> filesIterable = icebergPartitionTable.asUnkeyedTable().newScan()
+        .planFiles()) {
+      fileScanTasks = Lists.newArrayList(filesIterable);
+    }
 
     IcebergMinorOptimizePlan optimizePlan = new IcebergMinorOptimizePlan(icebergPartitionTable,
         new TableOptimizeRuntime(icebergPartitionTable.id()),
-        icebergPartitionTable.asUnkeyedTable().newScan().planFiles(),
+        fileScanTasks,
         new HashMap<>(), 1, System.currentTimeMillis());
     List<BaseOptimizeTask> tasks = optimizePlan.plan();
 
@@ -124,7 +144,7 @@ public class TestIcebergMinorOptimizeCommit extends TestIcebergBase {
       optimizeRuntime.setReportTime(System.currentTimeMillis());
       if (resultFiles != null) {
         optimizeRuntime.setNewFileSize(resultFiles.get(0).fileSizeInBytes());
-        optimizeRuntime.setTargetFiles(resultFiles.stream().map(SerializationUtil::toByteBuffer).collect(Collectors.toList()));
+        optimizeRuntime.setTargetFiles(resultFiles.stream().map(SerializationUtils::toByteBuffer).collect(Collectors.toList()));
       }
       List<ByteBuffer> finalTargetFiles = optimizeRuntime.getTargetFiles();
       optimizeRuntime.setTargetFiles(finalTargetFiles);

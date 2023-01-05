@@ -26,15 +26,12 @@ import com.netease.arctic.ams.server.service.IQuotaService;
 import com.netease.arctic.ams.server.service.ITableTaskHistoryService;
 import com.netease.arctic.ams.server.service.ServiceContainer;
 import com.netease.arctic.table.TableIdentifier;
-import com.netease.arctic.table.TableProperties;
-import com.netease.arctic.utils.CompatiblePropertyUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
-import java.util.Map;
 
 public class QuotaService implements IQuotaService {
 
@@ -60,10 +57,7 @@ public class QuotaService implements IQuotaService {
         new BigDecimal(calculateTotalCostTime(tableTaskHistoryList, startTime, endTime)).divide(new BigDecimal(period),
             2, RoundingMode.HALF_UP).doubleValue());
     try {
-      Map<String, String> properties =
-          ServiceContainer.getOptimizeService().getTableOptimizeItem(tableIdentifier).getArcticTable().properties();
-      double quota = CompatiblePropertyUtil.propertyAsDouble(properties, TableProperties.SELF_OPTIMIZING_QUOTA,
-          TableProperties.SELF_OPTIMIZING_QUOTA_DEFAULT);
+      double quota = ServiceContainer.getOptimizeService().getTableOptimizeItem(tableIdentifier).getQuotaCache();
       result.setNeedCoreCount(quota);
     } catch (NoSuchObjectException e) {
       LOG.error("no such table", e);

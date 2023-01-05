@@ -18,7 +18,7 @@
 
 package com.netease.arctic.spark.sql.optimize
 
-import com.netease.arctic.spark.ArcticSparkCatalog
+import com.netease.arctic.spark.{ArcticSparkCatalog, SparkSQLProperties}
 import com.netease.arctic.spark.sql.catalyst.plans.{AppendArcticData, OverwriteArcticData, OverwriteArcticDataByExpression, ReplaceArcticData}
 import com.netease.arctic.spark.table.ArcticSparkTable
 import com.netease.arctic.spark.util.ArcticSparkUtils
@@ -38,6 +38,86 @@ import java.util
 case class RewriteAppendArcticTable(spark: SparkSession) extends Rule[LogicalPlan] {
 
   import com.netease.arctic.spark.sql.ArcticExtensionUtils._
+  override def apply(plan: LogicalPlan): LogicalPlan = plan transform {
+    case AppendData(r: DataSourceV2Relation, query, writeOptions, isByName) if isArcticRelation(r) =>
+      val arcticRelation = asTableRelation(r)
+      val upsertWrite = arcticRelation.table.asUpsertWrite
+      val (newQuery, options) = if (upsertWrite.appendAsUpsert()) {
+        val upsertQuery = rewriteAppendAsUpsertQuery(r, query)
+        val upsertOptions = writeOptions + (WriteMode.WRITE_MODE_KEY -> WriteMode.UPSERT.mode)
+        (upsertQuery, upsertOptions)
+      } else {
+        (query, writeOptions)
+      }
+      arcticRelation.table match {
+        case a: ArcticSparkTable =>
+          if (a.table().isKeyedTable) {
+            val validateQuery = buildValidatePrimaryKeyDuplication(r, query)
+            if (checkDuplicatesEnabled()) {
+              AppendArcticData(arcticRelation, newQuery, validateQuery, options)
+            } else {
+              ReplaceArcticData(arcticRelation, query, writeOptions)
+            }
+          } else {
+            ReplaceArcticData(arcticRelation, query, writeOptions)
+          }
+      }
+    case a@OverwritePartitionsDynamic(r: DataSourceV2Relation, query, writeOptions, _)
+      if(checkDuplicatesEnabled())=>
+        val arcticRelation = asTableRelation(r)
+        arcticRelation.table match {
+          case table: ArcticSparkTable =>
+            if (table.table().isKeyedTable) {
+              val validateQuery = buildValidatePrimaryKeyDuplication(r, query)
+              OverwriteArcticData(arcticRelation, query, validateQuery, writeOptions)
+            } else {
+              a
+            }
+          case _ =>
+            a
+        }
+
+    case a@OverwriteByExpression(r: DataSourceV2Relation, deleteExpr, query, writeOptions, _)
+      if(checkDuplicatesEnabled())=>
+        val arcticRelation = asTableRelation(r)
+        arcticRelation.table match {
+          case table: ArcticSparkTable =>
+            if (table.table().isKeyedTable) {
+              val validateQuery = buildValidatePrimaryKeyDuplication(r, query)
+              var finalExpr: Expression = deleteExpr
+              deleteExpr match {
+                case expr: EqualNullSafe =>
+                  finalExpr = expr.copy(query.output.last, expr.right)
+                case _ =>
+              }
+              OverwriteArcticDataByExpression(arcticRelation, finalExpr, query, validateQuery, writeOptions)
+
+            } else {
+              a
+            }
+          case _ =>
+            a
+        }
+
+    case c@CreateTableAsSelect(catalog, ident, parts, query, props, options, ifNotExists)
+      if(checkDuplicatesEnabled())=>
+        catalog match {
+          case t: ArcticSparkCatalog =>
+            if (props.contains("primary.keys")) {
+              val primaries = props("primary.keys").split(",")
+              val than = GreaterThan(AggregateExpression(Count(Literal(1)), Complete, isDistinct = false), Cast(Literal(1), LongType))
+              val alias = Alias(than, "count")()
+              val attributes = query.output.filter(p => primaries.contains(p.name))
+              val validateQuery = Aggregate(attributes, Seq(alias), query)
+              CreateArcticTableAsSelect(catalog, ident, parts, query, validateQuery,
+                props, options, ifNotExists)
+            } else {
+              c
+            }
+          case _ =>
+            c
+        }
+  }
 
   def buildValidatePrimaryKeyDuplication(r: DataSourceV2Relation, query: LogicalPlan): LogicalPlan = {
     r.table match {
@@ -54,79 +134,10 @@ case class RewriteAppendArcticTable(spark: SparkSession) extends Rule[LogicalPla
     }
   }
 
-
-  override def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    case AppendData(r: DataSourceV2Relation, query, writeOptions, isByName) if isArcticRelation(r) =>
-      val arcticRelation = asTableRelation(r)
-      val upsertWrite = arcticRelation.table.asUpsertWrite
-      val (newQuery, options) = if (upsertWrite.appendAsUpsert()) {
-        val upsertQuery = rewriteAppendAsUpsertQuery(r, query)
-        val upsertOptions = writeOptions + (WriteMode.WRITE_MODE_KEY -> WriteMode.UPSERT.mode)
-        (upsertQuery, upsertOptions)
-      } else {
-        (query, writeOptions)
-      }
-      arcticRelation.table match {
-        case a: ArcticSparkTable =>
-          if (a.table().isKeyedTable) {
-            val validateQuery = buildValidatePrimaryKeyDuplication(r, query)
-            AppendArcticData(arcticRelation, newQuery, validateQuery, options)
-          } else {
-            ReplaceArcticData(arcticRelation, query, writeOptions)
-          }
-      }
-    case a@OverwritePartitionsDynamic(r: DataSourceV2Relation, query, writeOptions, _) =>
-      val arcticRelation = asTableRelation(r)
-      arcticRelation.table match {
-        case table: ArcticSparkTable =>
-          if (table.table().isKeyedTable) {
-            val validateQuery = buildValidatePrimaryKeyDuplication(r, query)
-            OverwriteArcticData(arcticRelation, query, validateQuery, writeOptions)
-          } else {
-            a
-          }
-        case _ =>
-          a
-      }
-
-    case a@OverwriteByExpression(r: DataSourceV2Relation, deleteExpr, query, writeOptions, _) =>
-      val arcticRelation = asTableRelation(r)
-      arcticRelation.table match {
-        case table: ArcticSparkTable =>
-          if (table.table().isKeyedTable) {
-            val validateQuery = buildValidatePrimaryKeyDuplication(r, query)
-            var finalExpr: Expression = deleteExpr
-            deleteExpr match {
-              case expr: EqualNullSafe =>
-                finalExpr = expr.copy(query.output.last, expr.right)
-              case _ =>
-            }
-            OverwriteArcticDataByExpression(arcticRelation, finalExpr, query, validateQuery, writeOptions)
-
-          } else {
-            a
-          }
-        case _ =>
-          a
-      }
-
-    case c@CreateTableAsSelect(catalog, ident, parts, query, props, options, ifNotExists) =>
-      catalog match {
-        case t: ArcticSparkCatalog =>
-          if (props.contains("primary.keys")) {
-            val primaries = props("primary.keys").split(",")
-            val than = GreaterThan(AggregateExpression(Count(Literal(1)), Complete, isDistinct = false), Cast(Literal(1), LongType))
-            val alias = Alias(than, "count")()
-            val attributes = query.output.filter(p => primaries.contains(p.name))
-            val validateQuery = Aggregate(attributes, Seq(alias), query)
-            CreateArcticTableAsSelect(catalog, ident, parts, query, validateQuery,
-              props, options, ifNotExists)
-          } else {
-            c
-          }
-        case _ =>
-          c
-      }
+  def checkDuplicatesEnabled(): Boolean = {
+    java.lang.Boolean.valueOf(spark.sessionState.conf.
+      getConfString(SparkSQLProperties.CHECK_DATA_DUPLICATES_ENABLE,
+        SparkSQLProperties.CHECK_DATA_DUPLICATES_ENABLE_DEFAULT))
   }
 
   def buildJoinCondition(primaries: util.List[String], r: DataSourceV2Relation, insertPlan: LogicalPlan): Expression =  {
@@ -172,22 +183,5 @@ case class RewriteAppendArcticTable(spark: SparkSession) extends Rule[LogicalPla
         Alias(a, "_arctic_after_" + a.name)()
     })
     Project(outputWithValues, relation)
-  }
-
-  private def distributionQuery(query: LogicalPlan, table: ArcticSparkTable): LogicalPlan =  {
-    val distribution = ArcticSparkUtils.buildRequiredDistribution(table) match {
-      case d: ClusteredDistribution =>
-        d.clustering.map(e => ArcticExpressionUtils.toCatalyst(e, query))
-      case _ =>
-        Array.empty[Expression]
-    }
-    val queryWithDistribution = if (distribution.nonEmpty) {
-      val partitionNum = conf.numShufflePartitions
-      val pp = RepartitionByExpression(distribution, query, partitionNum)
-      pp
-    } else {
-      query
-    }
-    queryWithDistribution
   }
 }
