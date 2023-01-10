@@ -5,18 +5,14 @@ import com.netease.arctic.ams.server.service.impl.SupportHiveSyncService;
 import com.netease.arctic.catalog.ArcticCatalog;
 import com.netease.arctic.catalog.CatalogLoader;
 import com.netease.arctic.table.ArcticTable;
-import com.netease.arctic.table.PrimaryKeySpec;
 import com.netease.arctic.table.TableIdentifier;
 import com.netease.arctic.table.TableProperties;
-import com.netease.arctic.utils.SerializationUtil;
+import com.netease.arctic.utils.SerializationUtils;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
-import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
-import org.apache.iceberg.data.GenericRecord;
-import org.apache.iceberg.data.Record;
 import org.apache.iceberg.types.Types;
 
 import java.nio.ByteBuffer;
@@ -84,8 +80,8 @@ public class Test {
         .withRecordCount(2) // needs at least one record or else metrics will filter it out
         .build();
 
-    ByteBuffer b = SerializationUtil.toByteBuffer(FILE_A);
-    ContentFile fb = SerializationUtil.toInternalTableFile(b);
+    ByteBuffer b = SerializationUtils.toByteBuffer(FILE_A);
+    ContentFile fb = SerializationUtils.toInternalTableFile(b);
     System.out.println(1);
   }
 }
