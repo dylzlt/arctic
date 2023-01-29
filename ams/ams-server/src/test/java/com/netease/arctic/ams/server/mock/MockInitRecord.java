@@ -54,9 +54,9 @@ import java.util.Arrays;
 import java.util.List;
 
 public class MockInitRecord {
-  private static final String CATALOG = "local_catalog";
-  private static final String DB = "db";
-  private static final String TABLE = "pk_table";
+  private static final String CATALOG = "arctic-benchmark";
+  private static final String DB = "optimize100w_0129_lt3";
+  private static final String TABLE = "stock";
   private static final TableIdentifier TABLE_ID = TableIdentifier.of(CATALOG, DB, TABLE);
 
   protected static final LocalDateTime ldt =
@@ -73,21 +73,23 @@ public class MockInitRecord {
 
   @Before
   public void loadTable() {
-    testCatalog = CatalogLoader.load("thrift://127.0.0.1:1260/" + CATALOG,
+    testCatalog = CatalogLoader.load("thrift://10.196.98.23:1260/" + CATALOG,
         Maps.newHashMap());
     arcticTable = testCatalog.loadTable(TABLE_ID);
     rowType = FlinkSchemaUtil.convert(arcticTable.schema());
   }
 
+  // arcticTable.updateProperties().set("self-optimizing.enabled", "true").set("self-optimizing.group", "iceberg_optimize_test").set("self-optimizing.minor.trigger.interval", "60000").set("self-optimizing.major.trigger.interval", "60000").commit();
+
   @Test
   public void mockData() throws Exception {
     arcticTable.io().doAs(() -> {
 //      for (int i = 0; i < 11; i++) {
-//        insertBase(arcticTable, 0, 1, rowType);
+//        insertBase(arcticTable, 0, 1l, rowType);
 //        Thread.sleep(1000);
 //      }
 //      insertInsert(arcticTable);
-      insetUpdate(arcticTable, 4, 10000);
+//      insetUpdate(arcticTable, 2l, 10000);
 
 //      insetUpdate(7);
       return null;
@@ -103,7 +105,7 @@ public class MockInitRecord {
 //    });
   }
 
-  protected void insertBase(ArcticTable arcticTable, int mask, long transaction, RowType rowType) throws Exception {
+  protected void insertBase(ArcticTable arcticTable, int mask, Long transaction, RowType rowType) throws Exception {
     TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, BaseLocationKind.INSTANT, mask, transaction, rowType);
     List<RowData> baseData = new ArrayList<RowData>() {{
       add(GenericRowData.ofKind(
@@ -124,7 +126,7 @@ public class MockInitRecord {
   protected void insertInsert(ArcticTable arcticTable) throws Exception {
     //write change insert
     {
-      TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 3, 1, rowType);
+      TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 3, 1l, rowType);
       List<RowData> insert = new ArrayList<RowData>() {{
         add(GenericRowData.ofKind(
             RowKind.INSERT, 1, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
@@ -148,7 +150,7 @@ public class MockInitRecord {
     }
   }
 
-  protected void insetUpdate(ArcticTable arcticTable, int txId, int count) throws Exception {
+  protected void insetUpdate(ArcticTable arcticTable, Long txId, int count) throws Exception {
     //write change delete
     {
       TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 4,  txId, rowType);
@@ -190,7 +192,7 @@ public class MockInitRecord {
   protected TaskWriter<RowData> createTaskWriter(ArcticTable arcticTable,
                                                  LocationKind locationKind,
                                                  int mask,
-                                                 long transactionId,
+                                                 Long transactionId,
                                                  RowType rowType) {
     if (arcticTable.isKeyedTable()) {
       return FlinkTaskWriterBuilder.buildFor(arcticTable)
