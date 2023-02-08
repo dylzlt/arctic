@@ -67,7 +67,7 @@ public abstract class UpdateHiveFiles<T extends SnapshotUpdate<T>> implements Sn
   protected Map<StructLike, Partition> partitionToCreate = Maps.newHashMap();
   protected final Map<StructLike, Partition> partitionToAlter = Maps.newHashMap();
   protected String unpartitionTableLocation;
-  protected long txId = -1;
+  protected Long txId = null;
   protected boolean validateLocation = true;
   protected boolean checkOrphanFiles = false;
   protected int commitTimestamp; // in seconds
@@ -321,7 +321,9 @@ public abstract class UpdateHiveFiles<T extends SnapshotUpdate<T>> implements Sn
               "partition will be " +
               "delete and re-create with same location");
         } else {
-          partitions.put(entry.getKey(), entry.getValue());
+          // this partition is need to alter, rather than delete
+          partitionToAlter.put(entry.getKey(), entry.getValue());
+          partitionToDelete.remove(entry.getKey());
           continue;
         }
       }
@@ -421,7 +423,7 @@ public abstract class UpdateHiveFiles<T extends SnapshotUpdate<T>> implements Sn
     // create a new empty location for hive
     String newLocation;
     newLocation = HiveTableUtil.newHiveDataLocation(table.hiveLocation(), table.spec(), null,
-        HiveTableUtil.newHiveSubdirectory(txId));
+        txId != null ? HiveTableUtil.newHiveSubdirectory(txId) : HiveTableUtil.newHiveSubdirectory());
     OutputFile file = table.io().newOutputFile(newLocation + "/.keep");
     try {
       file.createOrOverwrite().close();
