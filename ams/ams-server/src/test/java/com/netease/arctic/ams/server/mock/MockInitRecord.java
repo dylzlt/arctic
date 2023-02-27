@@ -29,6 +29,9 @@ import com.netease.arctic.table.ChangeLocationKind;
 import com.netease.arctic.table.LocationKind;
 import com.netease.arctic.table.TableIdentifier;
 import com.netease.arctic.table.TableProperties;
+import com.netease.arctic.table.UnkeyedTable;
+import com.netease.arctic.utils.ManifestEntryFields;
+import com.netease.arctic.utils.TableFileUtils;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
@@ -36,27 +39,44 @@ import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.apache.hadoop.hive.metastore.api.Partition;
-import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.iceberg.AppendFiles;
+import org.apache.iceberg.ContentFile;
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DataTask;
+import org.apache.iceberg.FileScanTask;
+import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.MetadataTableType;
+import org.apache.iceberg.MetadataTableUtils;
+import org.apache.iceberg.StructLike;
+import org.apache.iceberg.Table;
+import org.apache.iceberg.UpdateProperties;
+import org.apache.iceberg.data.GenericRecord;
+import org.apache.iceberg.data.IcebergGenerics;
+import org.apache.iceberg.data.Record;
 import org.apache.iceberg.flink.FlinkSchemaUtil;
+import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.TaskWriter;
 import org.apache.iceberg.io.WriteResult;
+import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class MockInitRecord {
-  private static final String CATALOG = "arctic-benchmark";
-  private static final String DB = "optimize100w_0129_lt3";
-  private static final String TABLE = "stock";
+  private static final String CATALOG = "mix_iceberg_catalog_test";
+  private static final String DB = "op_smoke";
+  private static final String TABLE = "pk_np_animal";
   private static final TableIdentifier TABLE_ID = TableIdentifier.of(CATALOG, DB, TABLE);
 
   protected static final LocalDateTime ldt =
@@ -73,23 +93,56 @@ public class MockInitRecord {
 
   @Before
   public void loadTable() {
-    testCatalog = CatalogLoader.load("thrift://10.196.98.23:1260/" + CATALOG,
+    testCatalog = CatalogLoader.load("thrift://10.196.98.26:18312/" + CATALOG,
         Maps.newHashMap());
     arcticTable = testCatalog.loadTable(TABLE_ID);
     rowType = FlinkSchemaUtil.convert(arcticTable.schema());
   }
 
-  // arcticTable.updateProperties().set("self-optimizing.enabled", "true").set("self-optimizing.group", "iceberg_optimize_test").set("self-optimizing.minor.trigger.interval", "60000").set("self-optimizing.major.trigger.interval", "60000").commit();
+  // arcticTable.updateProperties().set("self-optimizing.enabled", "true").set("self-optimizing.group", "iceberg_optimize_test").set("self-optimizing.minor.trigger.interval", "60000").commit();
+
+  private static String metadataTableName(String tableName, MetadataTableType type) {
+    return tableName + (tableName.contains("/") ? "#" : ".") + type;
+  }
+
+  private Iterable<CloseableIterable<StructLike>> entriesOfManifest(CloseableIterable<FileScanTask> fileScanTasks) {
+    return Iterables.transform(fileScanTasks, task -> {
+      assert task != null;
+      return ((DataTask) task).rows();
+    });
+  }
 
   @Test
   public void mockData() throws Exception {
+    Set<String> validFilesPath = new HashSet<>();
+    UnkeyedTable innerTable = arcticTable.asKeyedTable().changeTable();
+
+    Table manifestTable =
+        MetadataTableUtils.createMetadataTableInstance(((HasTableOperations) innerTable).operations(),
+            innerTable.name(), metadataTableName(innerTable.name(), MetadataTableType.ALL_ENTRIES),
+            MetadataTableType.ALL_ENTRIES);
+    try (CloseableIterable<Record> entries = IcebergGenerics.read(manifestTable)
+        .select(ManifestEntryFields.STATUS.name(), ManifestEntryFields.DATA_FILE_FIELD_NAME).build()) {
+      for (Record entry : entries) {
+        ManifestEntryFields.Status status =
+            ManifestEntryFields.Status.of((int) entry.get(ManifestEntryFields.STATUS.fieldId()));
+        if (status == ManifestEntryFields.Status.ADDED || status == ManifestEntryFields.Status.EXISTING) {
+          GenericRecord dataFile = (GenericRecord) entry.get(ManifestEntryFields.DATA_FILE_ID);
+          String filePath = (String) dataFile.getField(DataFile.FILE_PATH.name());
+          validFilesPath.add(TableFileUtils.getUriPath(filePath));
+        }
+      }
+    } catch (IOException e) {
+    }
+
+    System.out.println(validFilesPath + "," + validFilesPath.size());
     arcticTable.io().doAs(() -> {
 //      for (int i = 0; i < 11; i++) {
-//        insertBase(arcticTable, 0, 1l, rowType);
+//        insertBase(arcticTable, 0, null, rowType);
 //        Thread.sleep(1000);
 //      }
 //      insertInsert(arcticTable);
-//      insetUpdate(arcticTable, 2l, 10000);
+//      insetUpdate(arcticTable, null, 20);
 
 //      insetUpdate(7);
       return null;
@@ -109,13 +162,13 @@ public class MockInitRecord {
     TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, BaseLocationKind.INSTANT, mask, transaction, rowType);
     List<RowData> baseData = new ArrayList<RowData>() {{
       add(GenericRowData.ofKind(
-          RowKind.INSERT, 1, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-      add(GenericRowData.ofKind(
-          RowKind.INSERT, 2, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-      add(GenericRowData.ofKind(
-          RowKind.INSERT, 3, TimestampData.fromLocalDateTime(ldt.plusDays(1)), StringData.fromString("john")));
-      add(GenericRowData.ofKind(
-          RowKind.INSERT, 4, TimestampData.fromLocalDateTime(ldt.plusDays(1)), StringData.fromString("john")));
+          RowKind.INSERT, 13, StringData.fromString("john")));
+//      add(GenericRowData.ofKind(
+//          RowKind.INSERT, 2, StringData.fromString("john")));
+//      add(GenericRowData.ofKind(
+//          RowKind.INSERT, 3, StringData.fromString("john")));
+//      add(GenericRowData.ofKind(
+//          RowKind.INSERT, 4, StringData.fromString("john")));
     }};
     for (RowData record : baseData) {
       taskWriter.write(record);
@@ -126,23 +179,39 @@ public class MockInitRecord {
   protected void insertInsert(ArcticTable arcticTable) throws Exception {
     //write change insert
     {
-      TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 3, 1l, rowType);
+      TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 3, null, rowType);
+//      List<RowData> insert = new ArrayList<RowData>() {{
+//        add(GenericRowData.ofKind(
+//            RowKind.INSERT, 1, StringData.fromString("2022-01-01"), StringData.fromString("john")));
+//        add(GenericRowData.ofKind(
+//            RowKind.INSERT, 2, StringData.fromString("2022-01-01"), StringData.fromString("john")));
+//        add(GenericRowData.ofKind(
+//            RowKind.INSERT, 3, StringData.fromString("2022-01-01"), StringData.fromString("john")));
+//        add(GenericRowData.ofKind(
+//            RowKind.INSERT, 4, StringData.fromString("2022-01-01"), StringData.fromString("john")));
+//        add(GenericRowData.ofKind(
+//            RowKind.INSERT, 5, StringData.fromString("2022-01-01"), StringData.fromString("john")));
+//        add(GenericRowData.ofKind(
+//            RowKind.INSERT, 6, StringData.fromString("2022-01-01"), StringData.fromString("john")));
+//        add(GenericRowData.ofKind(
+//            RowKind.INSERT, 7, StringData.fromString("2022-01-01"), StringData.fromString("john")));
+//      }};
       List<RowData> insert = new ArrayList<RowData>() {{
-        add(GenericRowData.ofKind(
-            RowKind.INSERT, 1, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.INSERT, 2, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.INSERT, 3, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.INSERT, 4, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.INSERT, 5, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.INSERT, 6, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-        add(GenericRowData.ofKind(
-            RowKind.INSERT, 7, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john")));
-      }};
+      add(GenericRowData.ofKind(
+          RowKind.INSERT, 101, StringData.fromString("john")));
+      add(GenericRowData.ofKind(
+          RowKind.INSERT, 102, StringData.fromString("john")));
+      add(GenericRowData.ofKind(
+          RowKind.INSERT, 103, StringData.fromString("john")));
+      add(GenericRowData.ofKind(
+          RowKind.INSERT, 104, StringData.fromString("john")));
+      add(GenericRowData.ofKind(
+          RowKind.INSERT, 105, StringData.fromString("john")));
+      add(GenericRowData.ofKind(
+          RowKind.INSERT, 106, StringData.fromString("john")));
+      add(GenericRowData.ofKind(
+          RowKind.INSERT, 107, StringData.fromString("john")));
+    }};
       for (RowData record : insert) {
         taskWriter.write(record);
       }
@@ -153,13 +222,13 @@ public class MockInitRecord {
   protected void insetUpdate(ArcticTable arcticTable, Long txId, int count) throws Exception {
     //write change delete
     {
-      TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 4,  txId, rowType);
+      TaskWriter<RowData> taskWriter = createTaskWriter(arcticTable, ChangeLocationKind.INSTANT, 3,  txId, rowType);
       List<RowData> update = new ArrayList<RowData>();
       for (int i = 1; i <= count; i++) {
         RowData before = GenericRowData.ofKind(
-            RowKind.UPDATE_BEFORE, i, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john"));
+            RowKind.UPDATE_BEFORE, i, StringData.fromString("john"));
         RowData after = GenericRowData.ofKind(
-            RowKind.UPDATE_AFTER, i, TimestampData.fromLocalDateTime(ldt), StringData.fromString("john"));
+            RowKind.UPDATE_AFTER, i, StringData.fromString("john"));
         update.add(before);
         update.add(after);
       }

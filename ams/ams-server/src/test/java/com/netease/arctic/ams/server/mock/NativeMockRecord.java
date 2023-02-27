@@ -58,7 +58,7 @@ public class NativeMockRecord {
   public static final Schema TABLE_SCHEMA = new Schema(
       Types.NestedField.required(1, "id", Types.IntegerType.get()),
       Types.NestedField.required(2, "name", Types.StringType.get()),
-      Types.NestedField.required(3, "op_time", Types.TimestampType.withoutZone())
+      Types.NestedField.required(3, "update", Types.StringType.get())
   );
   protected static final PartitionSpec SPEC = PartitionSpec.builderFor(TABLE_SCHEMA)
       .identity("name").build();
@@ -95,8 +95,8 @@ public class NativeMockRecord {
   @Test
   public void mockData() throws Exception {
     List<DataFile> dataFiles = new ArrayList<>();
-    dataFiles.addAll(insertDataFiles(icebergTable, "add", 10));
-    insertEqDeleteFiles(icebergTable, "delete", 10);
+    dataFiles.addAll(insertDataFiles(icebergTable, "add", 0));
+    insertEqDeleteFiles(icebergTable, "delete", 0);
     insertPosDeleteFiles(icebergTable, dataFiles, 0);
   }
 
@@ -134,6 +134,7 @@ public class NativeMockRecord {
 
   protected void insertEqDeleteFiles(Table icebergTable, String operationId, int taskId) throws IOException {
     List<DeleteFile> result = new ArrayList<>();
+    List<DataFile> updateResult = new ArrayList<>();
     PartitionKey partitionKey = new PartitionKey(icebergTable.spec(), icebergTable.schema());
     partitionKey.partition(baseRecords(0, 1, icebergTable.schema()).get(0));
     int length = 10;
@@ -142,26 +143,42 @@ public class NativeMockRecord {
     GenericAppenderFactory appenderFactory =
         new GenericAppenderFactory(icebergTable.schema(), icebergTable.spec(),
             ArrayUtil.toIntArray(equalityFieldIds), eqDeleteRowSchema, null);
-    for (int i = taskId; i < taskId + length * 10; i = i + length) {
+    GenericAppenderFactory updateAfterAppenderFactory =
+        new GenericAppenderFactory(icebergTable.schema(), icebergTable.spec());
+    for (int i = 0; i < 0 + length * 10; i = i + length) {
       EncryptedOutputFile encryptedOutputFile =
-          OutputFileFactory.builderFor(icebergTable, icebergTable.spec().specId(), i)
+          OutputFileFactory.builderFor(icebergTable, icebergTable.spec().specId(), taskId + i)
               .format(FileFormat.PARQUET)
               .operationId(operationId)
               .build().newOutputFile();
       EqualityDeleteWriter<Record> writer = appenderFactory
           .newEqDeleteWriter(encryptedOutputFile, FileFormat.PARQUET, partitionKey);
+
+      EncryptedOutputFile updateEncryptedOutputFile =
+          OutputFileFactory.builderFor(icebergTable, icebergTable.spec().specId(), taskId + i)
+              .format(FileFormat.PARQUET)
+              .operationId("update")
+              .build().newOutputFile();
+      DataWriter<Record> updateWriter = updateAfterAppenderFactory
+          .newDataWriter(updateEncryptedOutputFile, FileFormat.PARQUET, partitionKey);
       List<Record> records = baseRecords(i, length, icebergTable.schema());
       for (int j = 0; j < records.size(); j++) {
         if (j % 2 == 0) {
           writer.delete(records.get(j));
+          Record updateRecord = records.get(j).copy();
+          updateRecord.setField("update", "update after");
+          updateWriter.write(updateRecord);
         }
       }
       writer.close();
       result.add(writer.toDeleteFile());
+      updateWriter.close();
+      updateResult.add(updateWriter.toDataFile());
     }
 
     RowDelta rowDelta = icebergTable.newRowDelta();
     result.forEach(rowDelta::addDeletes);
+    updateResult.forEach(rowDelta::addRows);
     rowDelta.commit();
   }
 
@@ -209,8 +226,7 @@ public class NativeMockRecord {
 
     ImmutableList.Builder<Record> builder = ImmutableList.builder();
     for (int i = start; i < start + length; i++) {
-      builder.add(record.copy(ImmutableMap.of("id", i, "name", "name",
-          "op_time", LocalDateTime.of(2022, 1, 1, 12, 0, 0))));
+      builder.add(record.copy(ImmutableMap.of("id", i, "name", "name", "update", "update before")));
     }
 
     return builder.build();
